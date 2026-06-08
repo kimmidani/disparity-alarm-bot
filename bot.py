@@ -104,8 +104,8 @@ def check_market_disparity():
         lines.append(f"<code>20일선      {int(d20):>3}%  {sig20}</code>")
         lines.append(f"<code>50일선      {int(d50):>3}%  {sig50}</code>")
         lines.append(f"<code>RSI         {int(rsi):>3}  {rsi_sig}</code>")
-        lines.append(f"<code>52주낙폭 {drop52:>6.1f}%</code>")
-        lines.append(f"<code>MDD    {mdd:>6.1f}% ({mdd_str})</code>")
+        lines.append(f"<code>52주낙폭  {drop52:>6.1f}%</code>")
+        lines.append(f"<code>MDD     {mdd:>6.1f}% ({mdd_str})</code>")
         lines.append(f"\n{opinion}")
 
     lines.append("─────────────────")
