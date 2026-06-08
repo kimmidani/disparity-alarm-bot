@@ -24,8 +24,14 @@ def calc_rsi(series, period=14):
     delta = series.diff()
     gain = delta.clip(lower=0).rolling(window=period).mean()
     loss = (-delta.clip(upper=0)).rolling(window=period).mean()
-    rs = gain / loss
+    rs = gain / (loss + 1e-10)
     return 100 - (100 / (1 + rs))
+
+# MDD 계산 함수 (1년치 기준)
+def calculate_mdd(series):
+    peak = series.expanding(min_periods=1).max()
+    drawdown = (series - peak) / peak
+    return drawdown.min() * 100
 
 def get_signal_20(disparity, is_index=False):
     if is_index:
@@ -84,8 +90,9 @@ def check_market_disparity():
     lines.append(f"🕐 {now} KST")
 
     for name, (symbol, is_index) in tickers.items():
+        # period를 1y로 변경하여 1년치 데이터 확보
         stock = yf.Ticker(symbol)
-        df = stock.history(period="120d")
+        df = stock.history(period="1y") 
         if df.empty:
             continue
 
@@ -104,6 +111,10 @@ def check_market_disparity():
         rsi    = today['RSI']
         diff20 = d20 - yesterday['D20']
         diff50 = d50 - yesterday['D50']
+        
+        # MDD 계산 및 경고 표시 로직
+        mdd = calculate_mdd(df['Close'])
+        warning = "⚠️" if mdd <= -30 else ""
 
         sig20    = get_signal_20(d20, is_index)
         sig50    = get_signal_50(d50, is_index)
@@ -113,9 +124,10 @@ def check_market_disparity():
 
         lines.append("─────────────────")
         lines.append(f"<b>📊 {name}</b>  {price:,.0f}{unit}")
-        lines.append(f"<code>20일  {int(d20):>3}%  </code>{sig20}<code>  ({diff20:+.1f}%p)</code>")
-        lines.append(f"<code>50일  {int(d50):>3}%  </code>{sig50}<code>  ({diff50:+.1f}%p)</code>")
-        lines.append(f"<code>RSI  {rsi:>3.0f}   </code>{rsi_sig}")
+        lines.append(f"• 20일 이격: {int(d20)}% {sig20} ({diff20:+.1f}%p)")
+        lines.append(f"• 50일 이격: {int(d50)}% {sig50} ({diff50:+.1f}%p)")
+        lines.append(f"• RSI 지수: {rsi:.0f} {rsi_sig}")
+        lines.append(f"• MDD(1년): {mdd:.1f}% {warning}")
         lines.append(opinion)
 
     lines.append("─────────────────")
