@@ -14,10 +14,8 @@ def send_telegram_message(message):
         response = requests.post(url, json=payload)
         if response.status_code == 200:
             print("▶ [성공] 텔레그램 전송 완료!")
-        else:
-            print(f"▶ [실패] 에러 코드: {response.status_code}")
     except Exception as e:
-        print(f"▶ 네트워크 에러: {e}")
+        print(f"▶ 에러: {e}")
 
 def calc_rsi(series, period=14):
     delta = series.diff()
@@ -33,41 +31,39 @@ def calculate_mdd(series):
 
 def get_signal_20(disparity, is_index=False):
     if is_index:
-        if disparity >= 105: return "🔴 고평가"
-        elif disparity <= 95: return "🟢 저평가"
-        else: return "⚪ 중립"
+        if disparity >= 105: return "🔴고평가"
+        elif disparity <= 95: return "🟢저평가"
+        return "⚪중립  "
     else:
-        if disparity >= 115: return "🔴 고평가"
-        elif disparity <= 85: return "🟢 저평가"
-        else: return "⚪ 중립"
+        if disparity >= 115: return "🔴고평가"
+        elif disparity <= 85: return "🟢저평가"
+        return "⚪중립  "
 
 def get_signal_50(disparity, is_index=False):
     if is_index:
-        if disparity >= 105: return "🔴 고평가"
-        elif disparity <= 95: return "🟢 저평가"
-        else: return "⚪ 중립"
+        if disparity >= 105: return "🔴고평가"
+        elif disparity <= 95: return "🟢저평가"
+        return "⚪중립  "
     else:
-        if disparity >= 125: return "🔴 고평가"
-        elif disparity <= 110: return "🟢 저평가"
-        else: return "⚪ 중립"
+        if disparity >= 125: return "🔴고평가"
+        elif disparity <= 110: return "🟢저평가"
+        return "⚪중립  "
 
 def get_rsi_signal(rsi):
-    if rsi >= 70: return "🔴 고평가"
-    elif rsi <= 30: return "🟢 저평가"
-    else: return "⚪ 중립"
+    if rsi >= 70: return "🔴고평가"
+    elif rsi <= 30: return "🟢저평가"
+    return "⚪중립  "
 
 def get_final_opinion(sig20, sig50, rsi_sig):
     score = 0
-    signals = [sig20, sig50, rsi_sig]
-    for sig in signals:
+    for sig in [sig20, sig50, rsi_sig]:
         if "저평가" in sig: score += 1
         elif "고평가" in sig: score -= 1
-    
     if score >= 3: return "💡 적극 매수 검토"
     elif score >= 1: return "💡 분할 매수 검토"
     elif score == 0: return "💡 관망"
     elif score >= -2: return "💡 신규 매수 자제"
-    else: return "💡 익절 검토"
+    return "💡 익절 검토"
 
 def check_market_disparity():
     kst = pytz.timezone("Asia/Seoul")
@@ -91,30 +87,24 @@ def check_market_disparity():
         df["D20"] = (df["Close"] / df["MA20"]) * 100
         df["D50"] = (df["Close"] / df["MA50"]) * 100
         df["RSI"] = calc_rsi(df["Close"])
-
-        today = df.iloc[-1]
-        price = today["Close"]
-        d20, d50, rsi = today["D20"], today["D50"], today["RSI"]
-        mdd = calculate_mdd(df["Close"])
-        high52 = df["Close"].max()
-        drop52 = ((price - high52) / high52) * 100
-
-        sig20 = get_signal_20(d20, is_index)
-        sig50 = get_signal_50(d50, is_index)
-        rsi_sig = get_rsi_signal(rsi)
         
+        today = df.iloc[-1]
+        price, d20, d50, rsi = today["Close"], today["D20"], today["D50"], today["RSI"]
+        mdd = calculate_mdd(df["Close"])
+        drop52 = ((price - df["Close"].max()) / df["Close"].max()) * 100
+
+        sig20, sig50, rsi_sig = get_signal_20(d20, is_index), get_signal_50(d50, is_index), get_rsi_signal(rsi)
         opinion = get_final_opinion(sig20, sig50, rsi_sig)
         unit = "pt" if is_index else "원"
 
         lines.append("─────────────────")
         lines.append(f"<b>📊 {name}</b>  {price:,.0f}{unit}")
-        lines.append(f"<code>20일선 {int(d20):>3}% </code>{sig20}")
-        lines.append(f"<code>50일선 {int(d50):>3}% </code>{sig50}")
-        lines.append(f"<code>RSI    {int(rsi):>3} </code>{rsi_sig}")
+        lines.append(f"<code>20일선  {int(d20):>3}%  {sig20}</code>")
+        lines.append(f"<code>50일선  {int(d50):>3}%  {sig50}</code>")
+        lines.append(f"<code>RSI     {int(rsi):>3}   {rsi_sig}</code>")
         lines.append(f"<code>52주낙폭 {drop52:>6.1f}%</code>")
-        lines.append(f"<code>MDD    {mdd:>6.1f}%</code>")
-        lines.append("")
-        lines.append(opinion)
+        lines.append(f"<code>MDD     {mdd:>6.1f}%</code>")
+        lines.append(f"\n{opinion}")
 
     lines.append("─────────────────")
     send_telegram_message("\n".join(lines))
