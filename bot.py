@@ -31,68 +31,50 @@ def calc_rsi(series, period=14):
 
 
 def get_disparity_signal(disparity, days, is_index=False):
-    """20일/50일 및 지수/종목별 기준 분리 (강세장 최적화 기준)"""
     if is_index:
         if days == 20:
-            if disparity >= 103:
-                return "🔴 과열"
-            elif disparity <= 97:
-                return "🟢 매수권"
-            else:
-                return "⚪ 관망"
-        else:  # 50일
-            if disparity >= 110:
-                return "🔴 과열"
-            elif disparity <= 100:
-                return "🟢 매수권"
-            else:
-                return "⚪ 관망"
-    else:  # 개별 종목
+            return "🔴 과열" if disparity >= 103 else "🟢 매수권" if disparity <= 97 else "⚪ 관망"
+        else:
+            return "🔴 과열" if disparity >= 110 else "🟢 매수권" if disparity <= 100 else "⚪ 관망"
+    else:
         if days == 20:
-            if disparity >= 110:
-                return "🔴 과열"
-            elif disparity <= 95:
-                return "🟢 매수권"
-            else:
-                return "⚪ 관망"
-        else:  # 50일
-            if disparity >= 125:
-                return "🔴 과열"
-            elif disparity <= 110:
-                return "🟢 매수권"
-            else:
-                return "⚪ 관망"
+            return "🔴 과열" if disparity >= 110 else "🟢 매수권" if disparity <= 95 else "⚪ 관망"
+        else:
+            return "🔴 과열" if disparity >= 125 else "🟢 매수권" if disparity <= 110 else "⚪ 관망"
 
 
+# RSI 50 이하 기준 변경 및 명칭을 '매수권'으로 수정
 def get_rsi_signal(rsi):
     if rsi >= 75:
         return "🔴 과열"
-    elif rsi <= 40:
-        return "🟢 침체"
+    elif rsi <= 50:
+        return "🟢 매수권"
     else:
         return "⚪ 중립"
 
 
+# RSI 명칭 변경에 따른 종합의견 로직 수정
 def get_final_opinion(sig20, sig50, rsi_sig):
-    if "매수권" in sig50 and "침체" in rsi_sig:
-        return "💡 [적극 매수 검토] 50일선·RSI 동시 매수권 (🔥)"
+    if "매수권" in sig50 and "매수권" in rsi_sig:
+        return "💡 종합의견: [적극 매수 검토] 50일선과 RSI가 동시에 매수권(🔥)에 진입한 상태입니다. 주간 고정 매수 타점 이하에서는 분할 매수 접근이 매우 유효합니다."
     elif "매수권" in sig50:
-        return "💡 [분할매수 검토] 50일선 매수권 진입"
+        return "💡 종합의견: [분할매수 검토] 중장기 50일선 매수권 진입 구간입니다."
     elif "매수권" in sig20 and "과열" not in sig50:
-        return "💡 [분할매수 검토] 20일선 매수권 진입"
+        return "💡 종합의견: [분할매수 검토] 단기 20일선 매수 타점에 도달했습니다."
     elif "과열" in sig50 and "과열" in rsi_sig:
-        return "💡 [익절 / 추가매수 금지] 50일선·RSI 동시 과열 (⚠️)"
+        return "💡 종합의견: [익절 / 추가매수 금지] 50일선과 RSI가 동시에 과열(⚠️) 상태이므로 리스크 관리가 필요합니다."
     elif "과열" in sig20 and "과열" in sig50:
-        return "💡 [신규매수 자제] 20·50일선 모두 과열"
+        return "💡 종합의견: [신규매수 자제] 20일 및 50일 이격도가 모두 과열되어 추격 매수를 금지합니다."
     elif "과열" in sig50:
-        return "💡 [신규매수 자제] 50일선 과열 구간"
+        return "💡 종합의견: [신규매수 자제] 중장기 50일선 과열 구간에 머물러 있습니다."
     else:
-        return "💡 [관망 유지]"
+        return "💡 종합의견: [관망 유지] 현재 뚜렷한 매수/매도 시그널이 없는 안정적인 관망 구간입니다."
 
 
 def check_market_disparity():
     kst = pytz.timezone("Asia/Seoul")
-    now = datetime.now(kst).strftime("%Y-%m-%d %H:%M")
+    now_dt = datetime.now(kst)
+    now_str = now_dt.strftime("%Y-%m-%d %H:%M")
 
     tickers = {
         "코스피": ("^KS11", True),
@@ -121,92 +103,38 @@ def check_market_disparity():
         yesterday = df.iloc[-2]
 
         price = today["Close"]
-        ma50_val = today["MA50"]
         d20 = today["D20"]
         d50 = today["D50"]
         rsi = today["RSI"]
         diff20 = d20 - yesterday["D20"]
         diff50 = d50 - yesterday["D50"]
 
-        sig20 = get_disparity_signal(d20, 20, is_index)
-        sig50 = get_disparity_signal(d50, 50, is_index)
-        rsi_sig = get_rsi_signal(rsi)
-        opinion = get_final_opinion(sig20, sig50, rsi_sig)
+        # 주간 첫 거래일의 50일선 고정 가격 기능
+        current_year, current_week, _ = today.name.isocalendar()
+        this_week_mask = [
+            x.isocalendar()[0] == current_year and x.isocalendar()[1] == current_week 
+            for x in df.index
+        ]
+        this_week_df = df[this_week_mask]
+        
+        if not this_week_df.empty:
+            ma50_anchor = this_week_df.iloc[0]["MA50"]
+        else:
+            ma50_anchor = today["MA50"]
 
         if is_index:
-            target_buy_price = ma50_val * 1.00
-            target_heat_price = ma50_val * 1.10
+            target_buy = ma50_anchor * 1.00
+            target_heat = ma50_anchor * 1.10
+            target_buy = round(target_buy / 5) * 5
+            target_heat = round(target_heat / 5) * 5
         else:
-            target_buy_price = ma50_val * 1.10
-            target_heat_price = ma50_val * 1.25
+            target_buy = ma50_anchor * 1.10
+            target_heat = ma50_anchor * 1.25
+            target_buy = round(target_buy / 1000) * 1000
+            target_heat = round(target_heat / 1000) * 1000
 
-        if "적극 매수" in opinion:
-            strong_buys.append(name)
-        elif "익절" in opinion:
-            strong_sells.append(name)
+        buy_gap = ((target_buy - price) / price) * 100
+        heat_gap = ((target_heat - price) / price) * 100
 
-        ticker_data.append(
-            {
-                "name": name,
-                "price": price,
-                "is_index": is_index,
-                "d20": d20,
-                "d50": d50,
-                "rsi": rsi,
-                "diff20": diff20,
-                "diff50": diff50,
-                "sig20": sig20,
-                "sig50": sig50,
-                "rsi_sig": rsi_sig,
-                "opinion": opinion,
-                "buy_price": target_buy_price,
-                "heat_price": target_heat_price,
-            }
-        )
-
-    lines = []
-
-    if strong_buys:
-        lines.append("🔥 <b>[역대급 매수 기회 자산 포착]</b>")
-        lines.append(
-            f"👉 이격도 침체 + RSI 강세장 과매도 동시 충족: {', '.join(strong_buys)}"
-        )
-        lines.append("─────────────────")
-    if strong_sells:
-        lines.append("⚠️ <b>[극단적 과열 매도 신호 포착]</b>")
-        lines.append(
-            f"👉 이격도 과열 + RSI 과열 동시 충족: {', '.join(strong_sells)}"
-        )
-        lines.append("─────────────────")
-
-    lines.append("🔔 <b>이격도 &amp; RSI 브리핑 (강세장 기준)</b>")
-    lines.append(f"🕐 {now} KST")
-    lines.append("ℹ️ 지수 기준: 50일 과열 110% / 매수 100%")
-    lines.append("ℹ️ 종목 기준: 50일 과열 125% / 매수 110% (RSI 매수 40이하)")
-
-    for t in ticker_data:
-        unit = "pt" if t["is_index"] else "원"
-        lines.append("─────────────────")
-        lines.append(f"<b>📊 {t['name']}</b>  {t['price']:,.0f}{unit}")
-        lines.append(
-            f"<code>20일  {int(t['d20']):>3}%  </code>{t['sig20']}<code>  ({t['diff20']:+.1f}%p)</code>"
-        )
-        lines.append(
-            f"<code>50일  {int(t['d50']):>3}%  </code>{t['sig50']}<code>  ({t['diff50']:+.1f}%p)</code>"
-        )
-        lines.append(
-            f"<code>RSI   {t['rsi']:.0f}     </code>{t['rsi_sig']}"
-        )
-        # 줄바꿈 위험 최소화를 위해 문구를 '🎯 50일 목표:'로 간결하게 수정
-        lines.append(
-            f"🎯 50일 목표: 🟢매수 <code>{t['buy_price']:,.0f}{unit}</code> | 🔴과열 <code>{t['heat_price']:,.0f}{unit}</code>"
-        )
-        lines.append(t["opinion"])
-
-    lines.append("─────────────────")
-
-    send_telegram_message("\n".join(lines))
-
-
-if __name__ == "__main__":
-    check_market_disparity()
+        sig20 = get_disparity_signal(d20, 20, is_index)
+        sig50 = get_disparity_signal
