@@ -70,7 +70,9 @@ def check_market_disparity():
     }
 
     lines = []
-    lines.append(f"🔔 <b>이격도 브리핑</b>  {now} KST")
+    lines.append(f"🔔 <b>이격도 &amp; RSI 브리핑</b>")
+    lines.append(f"")  # 빈 줄
+    lines.append(f"🕐 {now} KST")
 
     for name, (symbol, is_index) in tickers.items():
         stock = yf.Ticker(symbol)
@@ -94,18 +96,19 @@ def check_market_disparity():
         diff20 = d20 - yesterday['D20']
         diff50 = d50 - yesterday['D50']
 
-        sig20    = get_disparity_signal(d20, is_index)
-        sig50    = get_disparity_signal(d50, is_index)
-        rsi_sig  = get_rsi_signal(rsi)
-        opinion  = get_final_opinion(sig20, sig50, rsi_sig)
+        sig20   = get_disparity_signal(d20, is_index)
+        sig50   = get_disparity_signal(d50, is_index)
+        rsi_sig = get_rsi_signal(rsi)
+        opinion = get_final_opinion(sig20, sig50, rsi_sig)
 
         unit = "pt" if is_index else "원"
 
         lines.append("─────────────────")
         lines.append(f"<b>📊 {name}</b>  {price:,.0f}{unit}")
-        lines.append(f"20일  {int(d20):>3}%  {sig20}  ({diff20:+.1f}%p)")
-        lines.append(f"50일  {int(d50):>3}%  {sig50}  ({diff50:+.1f}%p)")
-        lines.append(f"RSI   {rsi:.0f}    {rsi_sig}")
+        # <code> 태그로 고정폭 폰트 → 이모지 열 정렬
+        lines.append(f"<code>20일  {int(d20):>3}%  </code>{sig20}<code>  ({diff20:+.1f}%p)</code>")
+        lines.append(f"<code>50일  {int(d50):>3}%  </code>{sig50}<code>  ({diff50:+.1f}%p)</code>")
+        lines.append(f"<code>RSI   {rsi:.0f}     </code>{rsi_sig}")
         lines.append(opinion)
 
     lines.append("─────────────────")
