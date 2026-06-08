@@ -1,4 +1,3 @@
-```python
 import yfinance as yf
 import requests
 import os
@@ -244,4 +243,3 @@ def check_market_disparity():
 
 if __name__ == "__main__":
     check_market_disparity()
-```
