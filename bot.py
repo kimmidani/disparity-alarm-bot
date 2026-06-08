@@ -56,24 +56,9 @@ def get_rsi_signal(rsi):
     elif rsi <= 30: return "🟢 저평가"
     else: return "⚪ 중립"
 
-def get_drop52_signal(drop52):
-    if drop52 <= -40: return "🟢 저평가"
-    elif drop52 <= -20: return "⚪ 중립"
-    else: return "🔴 고평가"
-
-def get_mdd_signal(mdd):
-    if mdd >= -20: return "🟢 안정"
-    elif mdd >= -40: return "⚪ 보통"
-    else: return "🔴 고변동"
-
-def get_risk_comment(mdd):
-    if mdd >= -20: return "(안정적 추세)"
-    elif mdd >= -40: return "(보통 변동성)"
-    return "(고변동 종목 주의)"
-
-def get_final_opinion(sig20, sig50, rsi_sig, drop52_sig):
+def get_final_opinion(sig20, sig50, rsi_sig):
     score = 0
-    signals = [sig20, sig50, rsi_sig, drop52_sig]
+    signals = [sig20, sig50, rsi_sig]
     for sig in signals:
         if "저평가" in sig: score += 1
         elif "고평가" in sig: score -= 1
@@ -94,7 +79,7 @@ def check_market_disparity():
         "삼성전기": ("009150.KS", False),
     }
 
-    lines = ["🔔 <b>이격도 · RSI · 52주낙폭 브리핑</b>", f"🕐 {now} KST"]
+    lines = ["🔔 <b>이격도 · RSI 브리핑</b>", f"🕐 {now} KST"]
 
     for name, (symbol, is_index) in tickers.items():
         stock = yf.Ticker(symbol)
@@ -117,11 +102,8 @@ def check_market_disparity():
         sig20 = get_signal_20(d20, is_index)
         sig50 = get_signal_50(d50, is_index)
         rsi_sig = get_rsi_signal(rsi)
-        drop52_sig = get_drop52_signal(drop52)
-        mdd_sig = get_mdd_signal(mdd)
         
-        opinion = get_final_opinion(sig20, sig50, rsi_sig, drop52_sig)
-        risk_comment = get_risk_comment(mdd)
+        opinion = get_final_opinion(sig20, sig50, rsi_sig)
         unit = "pt" if is_index else "원"
 
         lines.append("─────────────────")
@@ -129,10 +111,10 @@ def check_market_disparity():
         lines.append(f"<code>20일선 {int(d20):>3}% </code>{sig20}")
         lines.append(f"<code>50일선 {int(d50):>3}% </code>{sig50}")
         lines.append(f"<code>RSI    {int(rsi):>3} </code>{rsi_sig}")
-        lines.append(f"<code>52주낙폭 {drop52:>6.1f}%</code> {drop52_sig}")
-        lines.append(f"<code>MDD    {mdd:>6.1f}%</code> {mdd_sig}")
+        lines.append(f"<code>52주낙폭 {drop52:>6.1f}%</code>")
+        lines.append(f"<code>MDD    {mdd:>6.1f}%</code>")
         lines.append("")
-        lines.append(f"{opinion} {risk_comment}")
+        lines.append(opinion)
 
     lines.append("─────────────────")
     send_telegram_message("\n".join(lines))
