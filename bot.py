@@ -108,7 +108,7 @@ def check_market_disparity():
         # <code> 태그로 고정폭 폰트 → 이모지 열 정렬
         lines.append(f"<code>20일  {int(d20):>3}%  </code>{sig20}<code>  ({diff20:+.1f}%p)</code>")
         lines.append(f"<code>50일  {int(d50):>3}%  </code>{sig50}<code>  ({diff50:+.1f}%p)</code>")
-        lines.append(f"<code>RSI  {rsi:>3.0f}     </code>{rsi_sig}")
+        lines.append(f"<code>RSI  {rsi:>3.0f}   </code>{rsi_sig}")
         lines.append(opinion)
 
     lines.append("─────────────────")
