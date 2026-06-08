@@ -54,6 +54,11 @@ def get_rsi_signal(rsi):
     elif rsi <= 30: return "🟢저평가"
     return "⚪중립  "
 
+def get_mdd_signal(mdd):
+    if mdd >= -20: return "안정"
+    elif mdd >= -40: return "보통"
+    return "고변동"
+
 def get_final_opinion(sig20, sig50, rsi_sig):
     score = 0
     for sig in [sig20, sig50, rsi_sig]:
@@ -75,26 +80,23 @@ def check_market_disparity():
         "삼성전기": ("009150.KS", False),
     }
 
-    lines = ["🔔 <b>이격도 · RSI 브리핑</b>", f"🕐 {now} KST"]
+    lines = ["🔔 <b>주요 기술적지표 브리핑</b>", f"🕐 {now}"]
 
     for name, (symbol, is_index) in tickers.items():
         stock = yf.Ticker(symbol)
         df = stock.history(period="1y")
         if df.empty: continue
 
-        df["MA20"] = df["Close"].rolling(window=20).mean()
-        df["MA50"] = df["Close"].rolling(window=50).mean()
-        df["D20"] = (df["Close"] / df["MA20"]) * 100
-        df["D50"] = (df["Close"] / df["MA50"]) * 100
-        df["RSI"] = calc_rsi(df["Close"])
-        
-        today = df.iloc[-1]
-        price, d20, d50, rsi = today["Close"], today["D20"], today["D50"], today["RSI"]
+        price = df["Close"].iloc[-1]
+        d20 = (price / df["Close"].rolling(window=20).mean().iloc[-1]) * 100
+        d50 = (price / df["Close"].rolling(window=50).mean().iloc[-1]) * 100
+        rsi = calc_rsi(df["Close"]).iloc[-1]
         mdd = calculate_mdd(df["Close"])
         drop52 = ((price - df["Close"].max()) / df["Close"].max()) * 100
 
         sig20, sig50, rsi_sig = get_signal_20(d20, is_index), get_signal_50(d50, is_index), get_rsi_signal(rsi)
         opinion = get_final_opinion(sig20, sig50, rsi_sig)
+        mdd_str = get_mdd_signal(mdd)
         unit = "pt" if is_index else "원"
 
         lines.append("─────────────────")
@@ -103,7 +105,7 @@ def check_market_disparity():
         lines.append(f"<code>50일선  {int(d50):>3}%  {sig50}</code>")
         lines.append(f"<code>RSI     {int(rsi):>3}   {rsi_sig}</code>")
         lines.append(f"<code>52주낙폭 {drop52:>6.1f}%</code>")
-        lines.append(f"<code>MDD     {mdd:>6.1f}%</code>")
+        lines.append(f"<code>MDD     {mdd:>6.1f}% ({mdd_str})</code>")
         lines.append(f"\n{opinion}")
 
     lines.append("─────────────────")
