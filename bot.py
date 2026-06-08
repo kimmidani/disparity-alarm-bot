@@ -137,4 +137,57 @@ def check_market_disparity():
         heat_gap = ((target_heat - price) / price) * 100
 
         sig20 = get_disparity_signal(d20, 20, is_index)
-        sig50 = get_disparity_signal
+        sig50 = get_disparity_signal(d50, 50, is_index)
+        rsi_sig = get_rsi_signal(rsi)
+        opinion = get_final_opinion(sig20, sig50, rsi_sig)
+
+        if "적극 매수" in opinion:
+            strong_buys.append(name)
+        elif "익절" in opinion:
+            strong_sells.append(name)
+
+        ticker_data.append({
+            "name": name, "price": price, "is_index": is_index,
+            "d20": d20, "d50": d50, "rsi": rsi,
+            "diff20": diff20, "diff50": diff50,
+            "sig20": sig20, "sig50": sig50, "rsi_sig": rsi_sig,
+            "opinion": opinion, "buy_price": target_buy, "heat_price": target_heat,
+            "buy_gap": buy_gap, "heat_gap": heat_gap
+        })
+
+    lines = []
+
+    if strong_buys:
+        lines.append("🔥 <b>[역대급 매수 기회 자산 포착]</b>")
+        lines.append(f"👉 이격도 침체 + RSI 강세장 과매도 동시 충족: {', '.join(strong_buys)}")
+        lines.append("─────────────────")
+    if strong_sells:
+        lines.append("⚠️ <b>[극단적 과열 매도 신호 포착]</b>")
+        lines.append(f"👉 이격도 과열 + RSI 과열 동시 충족: {', '.join(strong_sells)}")
+        lines.append("─────────────────")
+
+    lines.append("🔔 <b>이격도 &amp; RSI 브리핑 (강세장 기준)</b>")
+    lines.append(f"🕐 {now_str} KST")
+
+    for t in ticker_data:
+        unit = "pt" if t["is_index"] else "원"
+        lines.append("─────────────────")
+        lines.append(f"<b>📊 {t['name']}</b> · {t['price']:,.0f}{unit}")
+        lines.append(f"• 20일 이격: {int(t['d20'])}% {t['sig20']} ({t['diff20']:+.1f}%p)")
+        lines.append(f"• 50일 이격: {int(t['d50'])}% {t['sig50']} ({t['diff50']:+.1f}%p)")
+        lines.append(f"• RSI 지수: {t['rsi']:.0f} {t['rsi_sig']}")
+        
+        # [요청사항 반영] 추천가격 개행(엔터) 및 레이아웃 수정
+        lines.append("• 추천가격")
+        lines.append(f"  - 매수: {t['buy_price']:,.0f}{unit} ({t['buy_gap']:+.1f}%)")
+        lines.append(f"  - 익절: {t['heat_price']:,.0f}{unit} ({t['heat_gap']:+.1f}%)")
+        
+        # 글머리 기호 기반으로 변경하여 자동 줄바꿈 시에도 깨짐 없음
+        lines.append(f"• {t['opinion']}")
+
+    lines.append("─────────────────")
+    send_telegram_message("\n".join(lines))
+
+
+if __name__ == "__main__":
+    check_market_disparity()
