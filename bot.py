@@ -43,7 +43,6 @@ def get_disparity_signal(disparity, days, is_index=False):
             return "🔴 과열" if disparity >= 125 else "🟢 매수권" if disparity <= 110 else "⚪ 관망"
 
 
-# RSI 50 이하 기준 변경 및 명칭을 '매수권'으로 수정
 def get_rsi_signal(rsi):
     if rsi >= 75:
         return "🔴 과열"
@@ -53,22 +52,22 @@ def get_rsi_signal(rsi):
         return "⚪ 중립"
 
 
-# RSI 명칭 변경에 따른 종합의견 로직 수정
+# 가독성을 위해 불필요한 접두사를 제거하고 결론을 볼드 처리하도록 수정
 def get_final_opinion(sig20, sig50, rsi_sig):
     if "매수권" in sig50 and "매수권" in rsi_sig:
-        return "💡 종합의견: [적극 매수 검토] 50일선과 RSI가 동시에 매수권(🔥)에 진입한 상태입니다. 주간 고정 매수 타점 이하에서는 분할 매수 접근이 매우 유효합니다."
+        return "<b>[적극 매수 검토]</b> 50일선과 RSI가 동시에 매수권(🔥)에 진입한 상태입니다. 주간 고정 매수 타점 이하에서는 분할 매수 접근이 매우 유효합니다."
     elif "매수권" in sig50:
-        return "💡 종합의견: [분할매수 검토] 중장기 50일선 매수권 진입 구간입니다."
+        return "<b>[분할매수 검토]</b> 중장기 50일선 매수권 진입 구간입니다."
     elif "매수권" in sig20 and "과열" not in sig50:
-        return "💡 종합의견: [분할매수 검토] 단기 20일선 매수 타점에 도달했습니다."
+        return "<b>[분할매수 검토]</b> 단기 20일선 매수 타점에 도달했습니다."
     elif "과열" in sig50 and "과열" in rsi_sig:
-        return "💡 종합의견: [익절 / 추가매수 금지] 50일선과 RSI가 동시에 과열(⚠️) 상태이므로 리스크 관리가 필요합니다."
+        return "<b>[익절 / 추가매수 금지]</b> 50일선과 RSI가 동시에 과열(⚠️) 상태이므로 리스크 관리가 필요합니다."
     elif "과열" in sig20 and "과열" in sig50:
-        return "💡 종합의견: [신규매수 자제] 20일 및 50일 이격도가 모두 과열되어 추격 매수를 금지합니다."
+        return "<b>[신규매수 자제]</b> 20일 및 50일 이격도가 모두 과열되어 추격 매수를 금지합니다."
     elif "과열" in sig50:
-        return "💡 종합의견: [신규매수 자제] 중장기 50일선 과열 구간에 머물러 있습니다."
+        return "<b>[신규매수 자제]</b> 중장기 50일선 과열 구간에 머물러 있습니다."
     else:
-        return "💡 종합의견: [관망 유지] 현재 뚜렷한 매수/매도 시그널이 없는 안정적인 관망 구간입니다."
+        return "<b>[관망 유지]</b> 현재 뚜렷한 매수/매도 시그널이 없는 안정적인 관망 구간입니다."
 
 
 def check_market_disparity():
@@ -109,7 +108,7 @@ def check_market_disparity():
         diff20 = d20 - yesterday["D20"]
         diff50 = d50 - yesterday["D50"]
 
-        # 주간 첫 거래일의 50일선 고정 가격 기능
+        # 주간 고정 50일선 산출 로직
         current_year, current_week, _ = today.name.isocalendar()
         this_week_mask = [
             x.isocalendar()[0] == current_year and x.isocalendar()[1] == current_week 
@@ -177,13 +176,16 @@ def check_market_disparity():
         lines.append(f"• 50일 이격: {int(t['d50'])}% {t['sig50']} ({t['diff50']:+.1f}%p)")
         lines.append(f"• RSI 지수: {t['rsi']:.0f} {t['rsi_sig']}")
         
-        # [요청사항 반영] 추천가격 개행(엔터) 및 레이아웃 수정
-        lines.append("• 추천가격")
-        lines.append(f"  - 매수: {t['buy_price']:,.0f}{unit} ({t['buy_gap']:+.1f}%)")
-        lines.append(f"  - 익절: {t['heat_price']:,.0f}{unit} ({t['heat_gap']:+.1f}%)")
+        # 가독성 개선: 타점 가격 볼드 처리 및 등락 화살표 기호화
+        buy_arrow = f"▼{abs(t['buy_gap']):.1f}%" if t['buy_gap'] < 0 else f"▲{t['buy_gap']:.1f}%" if t['buy_gap'] > 0 else "0.0%"
+        heat_arrow = f"▼{abs(t['heat_gap']):.1f}%" if t['heat_gap'] < 0 else f"▲{t['heat_gap']:.1f}%" if t['heat_gap'] > 0 else "0.0%"
         
-        # 글머리 기호 기반으로 변경하여 자동 줄바꿈 시에도 깨짐 없음
-        lines.append(f"• {t['opinion']}")
+        lines.append("• 추천가격")
+        lines.append(f"  - 매수: <b>{t['buy_price']:,.0f}{unit}</b> ({buy_arrow})")
+        lines.append(f"  - 익절: <b>{t['heat_price']:,.0f}{unit}</b> ({heat_arrow})")
+        
+        # 가독성 개선: 이중 기호 제거 및 라벨링 구조화
+        lines.append(f"• 💡 <b>종합의견:</b> {t['opinion']}")
 
     lines.append("─────────────────")
     send_telegram_message("\n".join(lines))
