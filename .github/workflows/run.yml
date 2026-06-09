@@ -1,4 +1,4 @@
-name: Run Disparity Bot Twice Daily
+name: disparity-bot
 
 on:
   schedule:
@@ -10,18 +10,12 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: 저장소 코드 가져오기
-        uses: actions/checkout@v3
-
-      - name: 파이썬 환경 설정
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
-      - name: 필수 패키지 설치
-        run: pip install pandas yfinance requests pytz
-
-      - name: 봇 실행
+      - run: pip install pandas yfinance requests pytz
+      - name: run
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
