@@ -17,6 +17,27 @@ def send_telegram_message(message):
     except Exception as e:
         print(f"▶ 에러: {e}")
 
+# 연속 상승/하락 계산 함수
+def get_consecutive_days(series):
+    diff = series.diff()
+    # 상승(True), 하락(False)만 필터링 (보합 제외)
+    valid_diff = diff[diff != 0]
+    if valid_diff.empty:
+        return 0, "보합"
+    
+    last_val = valid_diff.iloc[-1]
+    is_up = last_val > 0
+    
+    count = 0
+    for val in reversed(valid_diff):
+        if (val > 0) == is_up:
+            count += 1
+        else:
+            break
+            
+    direction = "상승" if is_up else "하락"
+    return count, direction
+
 def calc_rsi(series, period=14):
     delta = series.diff()
     gain = delta.clip(lower=0).rolling(window=period).mean()
@@ -31,27 +52,27 @@ def calculate_mdd(series):
 
 def get_signal_20(disparity, is_index=False):
     if is_index:
-        if disparity >= 105: return "🔴고평가"
-        elif disparity <= 95: return "🟢저평가"
+        if disparity >= 105: return "🔴과열  "
+        elif disparity <= 95: return "🟢매수권"
         return "⚪중립  "
     else:
-        if disparity >= 115: return "🔴고평가"
-        elif disparity <= 85: return "🟢저평가"
+        if disparity >= 115: return "🔴과열  "
+        elif disparity <= 85: return "🟢매수권"
         return "⚪중립  "
 
 def get_signal_50(disparity, is_index=False):
     if is_index:
-        if disparity >= 105: return "🔴고평가"
-        elif disparity <= 95: return "🟢저평가"
+        if disparity >= 105: return "🔴과열  "
+        elif disparity <= 95: return "🟢매수권"
         return "⚪중립  "
     else:
-        if disparity >= 125: return "🔴고평가"
-        elif disparity <= 110: return "🟢저평가"
+        if disparity >= 125: return "🔴과열  "
+        elif disparity <= 110: return "🟢매수권"
         return "⚪중립  "
 
 def get_rsi_signal(rsi):
-    if rsi >= 70: return "🔴고평가"
-    elif rsi <= 30: return "🟢저평가"
+    if rsi >= 70: return "🔴과열  "
+    elif rsi <= 30: return "🟢매수권"
     return "⚪중립  "
 
 def get_mdd_signal(mdd):
@@ -88,28 +109,5 @@ def check_market_disparity():
         if df.empty: continue
 
         price = df["Close"].iloc[-1]
-        d20 = (price / df["Close"].rolling(window=20).mean().iloc[-1]) * 100
-        d50 = (price / df["Close"].rolling(window=50).mean().iloc[-1]) * 100
-        rsi = calc_rsi(df["Close"]).iloc[-1]
-        mdd = calculate_mdd(df["Close"])
-        drop52 = ((price - df["Close"].max()) / df["Close"].max()) * 100
-
-        sig20, sig50, rsi_sig = get_signal_20(d20, is_index), get_signal_50(d50, is_index), get_rsi_signal(rsi)
-        opinion = get_final_opinion(sig20, sig50, rsi_sig)
-        mdd_str = get_mdd_signal(mdd)
-        unit = "pt" if is_index else "원"
-
-        lines.append("─────────────────")
-        lines.append(f"<b>📊 {name}</b>  {price:,.0f}{unit}")
-        lines.append(f"<code>20일선      {int(d20):>3}%  {sig20}</code>")
-        lines.append(f"<code>50일선      {int(d50):>3}%  {sig50}</code>")
-        lines.append(f"<code>RSI         {int(rsi):>3}  {rsi_sig}</code>")
-        lines.append(f"<code>52주낙폭  {drop52:>6.1f}%</code>")
-        lines.append(f"<code>MDD     {mdd:>6.1f}% ({mdd_str})</code>")
-        lines.append(f"\n{opinion}")
-
-    lines.append("─────────────────")
-    send_telegram_message("\n".join(lines))
-
-if __name__ == "__main__":
-    check_market_disparity()
+        prev_price = df["Close"].iloc[-2]
+        change_rate = ((price - prev_price) / prev_
