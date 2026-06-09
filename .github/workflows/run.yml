@@ -2,8 +2,8 @@ name: disparity-bot
 
 on:
   schedule:
-    - cron: '03 1 * * 1-5'
-    - cron: '50 5 * * 1-5'
+    - cron: '00 0 * * 1-5'
+    - cron: '05 1 * * 1-5'
   workflow_dispatch:
 
 jobs:
@@ -19,4 +19,5 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
+          ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
         run: python bot.py
