@@ -2,7 +2,6 @@ name: Run Disparity Bot Twice Daily
 
 on:
   schedule:
-  # 스케줄 인식해라!
      # 09:30 받고 싶으면 09:00으로 설정
     - cron: '0 0 * * 1-5'   # KST 09:00 (여유 30분)
 
