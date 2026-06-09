@@ -2,6 +2,7 @@ name: Run Disparity Bot Twice Daily
 
 on:
   schedule:
+  # 스케줄 인식해라!
     # 한국시간 오전 09:30 (UTC 오전 00:30)
     - cron: '30 0 * * 1-5'
     # 한국시간 오후 15:15 (UTC 오전 06:15)
