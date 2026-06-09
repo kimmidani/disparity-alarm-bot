@@ -2,31 +2,27 @@ name: Run Disparity Bot Twice Daily
 
 on:
   schedule:
-     # 09:30 받고 싶으면 09:00으로 설정
-     - cron: '0 0 * * 1-5'   # KST 09:00 (여유 30분)
-
-    # 15:15 받고 싶으면 14:50으로 설정
-     - cron: '50 5 * * 1-5'  # KST 14:50 (여유 25분)
+    - cron: '38 10 * * 1-5'
+    - cron: '50 5 * * 1-5'
   workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-    - name: 저장소 코드 가져오기
-      uses: actions/checkout@v3
+      - name: 저장소 코드 가져오기
+        uses: actions/checkout@v3
 
-    - name: 파이썬 환경 설정
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
+      - name: 파이썬 환경 설정
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-    - name: 필수 패키지 설치
-      run: |
-        pip install pandas yfinance requests
+      - name: 필수 패키지 설치
+        run: pip install pandas yfinance requests pytz
 
-    - name: 봇 실행
-      env:
-        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        CHAT_ID: ${{ secrets.CHAT_ID }}
-      run: python bot.py
+      - name: 봇 실행
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python bot.py
