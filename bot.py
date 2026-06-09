@@ -83,8 +83,8 @@ def get_mdd_signal(mdd):
 def get_final_opinion(sig20, sig50, rsi_sig):
     score = 0
     for sig in [sig20, sig50, rsi_sig]:
-        if "저평가" in sig: score += 1
-        elif "고평가" in sig: score -= 1
+        if "매수권" in sig: score += 1
+        elif "과열  " in sig: score -= 1
     if score >= 3: return "💡 적극 매수 검토"
     elif score >= 1: return "💡 분할 매수 검토"
     elif score == 0: return "💡 관망"
@@ -110,4 +110,33 @@ def check_market_disparity():
 
         price = df["Close"].iloc[-1]
         prev_price = df["Close"].iloc[-2]
-        change_rate = ((price - prev_price) / prev_
+        change_rate = ((price - prev_price) / prev_price) * 100
+        
+        count, direction = get_consecutive_days(df["Close"])
+        
+        d20 = (price / df["Close"].rolling(window=20).mean().iloc[-1]) * 100
+        d50 = (price / df["Close"].rolling(window=50).mean().iloc[-1]) * 100
+        rsi = calc_rsi(df["Close"]).iloc[-1]
+        mdd = calculate_mdd(df["Close"])
+        drop52 = ((price - df["Close"].max()) / df["Close"].max()) * 100
+
+        sig20, sig50, rsi_sig = get_signal_20(d20, is_index), get_signal_50(d50, is_index), get_rsi_signal(rsi)
+        opinion = get_final_opinion(sig20, sig50, rsi_sig)
+        mdd_str = get_mdd_signal(mdd)
+        unit = "pt" if is_index else "원"
+
+        lines.append("─────────────────")
+        lines.append(f"📊 <b>{name}</b>  {price:,.0f}{unit} ({change_rate:+.1f}%)")
+        lines.append(f"<code>연속 등락    {count}일 {direction}</code>")
+        lines.append(f"<code>20일선      {int(d20):>3}%  {sig20}</code>")
+        lines.append(f"<code>50일선      {int(d50):>3}%  {sig50}</code>")
+        lines.append(f"<code>RSI         {int(rsi):>3}  {rsi_sig}</code>")
+        lines.append(f"<code>52주낙폭  {drop52:>6.1f}%</code>")
+        lines.append(f"<code>MDD     {mdd:>6.1f}% ({mdd_str})</code>")
+        lines.append(f"\n{opinion}")
+
+    lines.append("─────────────────")
+    send_telegram_message("\n".join(lines))
+
+if __name__ == "__main__":
+    check_market_disparity()
