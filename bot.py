@@ -120,3 +120,48 @@ def check_market_disparity():
         "SK하이닉스": ("000660.KS", False),
         "삼성전기":   ("009150.KS", False),
     }
+
+    lines = ["🔔 <b>주요 기술적지표 브리핑</b>", f"🕐 {now}"]
+
+    for name, (symbol, is_index) in tickers.items():
+        df_today, df_calc = load_stock_data(symbol)
+        if df_calc.empty or len(df_calc) < 50:
+            continue
+
+        closes     = df_calc["Close"]
+        price      = df_today["Close"].iloc[-1]   # 현재가 (장중 실시간)
+        prev_price = closes.iloc[-1]               # 전일 종가
+        change_rate = ((price - prev_price) / prev_price) * 100
+
+        count, direction = get_consecutive_days(closes)
+
+        ma20 = closes.rolling(window=20).mean().iloc[-1]
+        ma50 = closes.rolling(window=50).mean().iloc[-1]
+        d20  = (price / ma20) * 100
+        d50  = (price / ma50) * 100
+        rsi  = calc_rsi(closes).iloc[-1]
+        mdd  = calculate_mdd(closes)
+        drop52 = ((price - closes.max()) / closes.max()) * 100
+
+        sig20   = get_signal_20(d20)
+        sig50   = get_signal_50(d50)
+        rsi_sig = get_rsi_signal(rsi)
+        opinion = get_final_opinion(sig20, sig50, rsi_sig)
+        mdd_str = get_mdd_signal(mdd)
+        unit    = "pt" if is_index else "원"
+
+        lines.append("<code>─────────────────</code>")
+        lines.append(f"📊 <b>{name}</b>  {price:,.0f}{unit} ({change_rate:+.1f}%)")
+        lines.append(f"<code>등락   {count}일 연속 {direction}</code>")
+        lines.append(f"<code>20일  {int(d20):>3}%  {sig20}</code>")
+        lines.append(f"<code>50일  {int(d50):>3}%  {sig50}</code>")
+        lines.append(f"<code>RSI   {int(rsi):>3}   {rsi_sig}</code>")
+        lines.append(f"<code>52주낙폭  {drop52:>6.1f}%</code>")
+        lines.append(f"<code>MDD   {mdd:>6.1f}%  {mdd_str}</code>")
+        lines.append(opinion)
+
+    lines.append("<code>─────────────────</code>")
+    send_telegram_message("\n".join(lines))
+
+if __name__ == "__main__":
+    check_market_disparity()
