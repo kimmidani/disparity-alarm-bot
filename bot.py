@@ -112,7 +112,6 @@ def check_market_disparity():
     for name, (symbol, is_index) in tickers.items():
         try:
             ticker = yf.Ticker(symbol)
-            # 기술적 지표 계산을 위해 1년치 데이터 수집
             df = ticker.history(period="1y")
             
             if df.empty or len(df) < 50:
@@ -122,12 +121,10 @@ def check_market_disparity():
             closes_all = df["Close"]
             price = closes_all.iloc[-1]
 
-            # 지표 계산용 데이터셋 분리 (장중 변동성 왜곡 방지)
             last_date = df.index[-1].date()
             is_intraday = (last_date == now.date()) and (now.hour < 15 or (now.hour == 15 and now.minute < 40))
             closes_calc = closes_all.iloc[:-1] if is_intraday else closes_all
 
-            # 기술적 지표 연산
             ma20 = closes_calc.rolling(window=20).mean().iloc[-1]
             ma50 = closes_calc.rolling(window=50).mean().iloc[-1]
             
@@ -147,18 +144,15 @@ def check_market_disparity():
             opinion = get_final_opinion(sig20, sig50, rsi_sig)
             mdd_str = get_mdd_signal(mdd)
 
-            # 데이터 출력 포맷팅 (NaN 방어 처리)
             d20_str = f"{d20:.0f}" if not pd.isna(d20) else "N/A"
             d50_str = f"{d50:.0f}" if not pd.isna(d50) else "N/A"
             rsi_str = f"{rsi:.0f}" if not pd.isna(rsi) else "N/A"
 
             lines.append("<code>─────────────────</code>")
             
-            # 🔥 코스피 지수와 개별 종목 출력 조건 분기
             if is_index:
                 price_fmt = f"{price:,.2f}"
                 lines.append(f"📊 <b>{name}</b>  {price_fmt}pt")
-                # 코스피는 등락률 및 연속 상승/하락 행을 완전히 제외합니다.
             else:
                 prev_price = closes_all.iloc[-2] if len(closes_all) >= 2 else price
                 change_rate = ((price - prev_price) / prev_price) * 100 if prev_price != 0 else 0.0
@@ -175,6 +169,13 @@ def check_market_disparity():
             lines.append(f"<code>52주낙폭  {drop52:>6.1f}%</code>")
             lines.append(f"<code>MDD   {mdd:>6.1f}%  {mdd_str}</code>")
             lines.append(opinion)
+
+            # 🔥 [조건 추가] 코스피 지수의 50일 이격도 특수 알림 처리
+            if name == "코스피" and not pd.isna(d50):
+                if d50 >= 130:
+                    lines.append("🚨 <b>⚠️ 과열권 진입, 패닉바잉 자제</b>")
+                elif d50 <= 110:
+                    lines.append("📢 <b>🟢 과열해소 진행, 패닉셀링 자제</b>")
 
         except Exception as e:
             print(f"▶ {name}({symbol}) 처리 중 예외 에러 발생: {e}")
