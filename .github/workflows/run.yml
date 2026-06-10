@@ -2,8 +2,8 @@ name: disparity-bot
 
 on:
   schedule:
-    - cron: '00 0 * * 1-5'
-    - cron: '05 1 * * 1-5'
+    - cron: '12 0 * * 1-5'
+    - cron: '17 5 * * 1-5'
   workflow_dispatch:
 
 jobs:
