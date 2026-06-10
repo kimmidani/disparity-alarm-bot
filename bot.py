@@ -4,8 +4,8 @@ import os
 from datetime import datetime
 import pytz
 
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-CHAT_ID = os.environ["CHAT_ID"]
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "여기에_토큰_입력")
+CHAT_ID = os.environ.get("CHAT_ID", "여기에_챗ID_입력")
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -18,50 +18,25 @@ def send_telegram_message(message):
         print(f"▶ 에러: {e}")
 
 def load_stock_data(symbol):
-    """
-    반환: (df_today, df_calc)
-    - df_today : 현재가 추출용 (오늘 장중 포함)
-    - df_calc  : 지표 계산용 (장중이면 오늘 데이터 제거 → 전일 종가 기준)
-    """
-    kst = pytz.timezone("Asia/Seoul")
-    now_kst = datetime.now(kst)
-
+    # 시간대 변환의 부작용을 막기 위해 raw 데이터만 추출
     df = yf.Ticker(symbol).history(period="1y", auto_adjust=True)
-    if df.empty:
-        return df, df
-
-    if df.index.tz is None:
-        df.index = df.index.tz_localize("UTC").tz_convert(kst)
-    else:
-        df.index = df.index.tz_convert(kst)
-
-    is_intraday = (
-        df.index[-1].date() == now_kst.date()
-        and now_kst.hour < 16
-    )
-
-    if is_intraday:
-        df_today = df.iloc[-1:]   # 오늘 장중 → 현재가용
-        df_calc  = df.iloc[:-1]   # 전일까지  → 지표 계산용
-    else:
-        df_today = df.iloc[-1:]
-        df_calc  = df
-
-    return df_today, df_calc
+    return df
 
 def get_consecutive_days(series):
     closes = series.tolist()
-    diffs = []
-    for i in range(1, len(closes)):
-        d = closes[i] - closes[i-1]
-        if d != 0:
-            diffs.append(d)
-    if not diffs:
+    if len(closes) < 2:
         return 0, "보합"
-    is_up = diffs[-1] > 0
+
+    diffs = [closes[i] - closes[i-1] for i in range(1, len(closes))]
+    latest_diff = diffs[-1]
+
+    if latest_diff == 0:
+        return 0, "보합"
+
+    is_up = latest_diff > 0
     count = 0
     for d in reversed(diffs):
-        if (d > 0) == is_up:
+        if (d > 0) == is_up and d != 0:
             count += 1
         else:
             break
@@ -112,7 +87,8 @@ def get_final_opinion(sig20, sig50, rsi_sig):
 
 def check_market_disparity():
     kst = pytz.timezone("Asia/Seoul")
-    now = datetime.now(kst).strftime("%Y-%m-%d %H:%M")
+    now = datetime.now(kst)
+    now_str = now.strftime("%Y-%m-%d %H:%M")
 
     tickers = {
         "코스피":     ("^KS11",     True),
@@ -121,27 +97,38 @@ def check_market_disparity():
         "삼성전기":   ("009150.KS", False),
     }
 
-    lines = ["🔔 <b>주요 기술적지표 브리핑</b>", f"🕐 {now}"]
+    lines = ["🔔 <b>주요 기술적지표 브리핑</b>", f"🕐 {now_str}"]
+
+    # 현재 한국 시간 기준으로 장중(09:00 ~ 15:30)인지 확인
+    is_market_open = (9 <= now.hour < 15) or (now.hour == 15 and now.minute < 30)
 
     for name, (symbol, is_index) in tickers.items():
-        df_today, df_calc = load_stock_data(symbol)
-        if df_calc.empty or len(df_calc) < 50:
+        df = load_stock_data(symbol)
+        if df.empty or len(df) < 50:
             continue
 
-        closes     = df_calc["Close"]
-        price      = df_today["Close"].iloc[-1]   # 현재가 (장중 실시간)
-        prev_price = closes.iloc[-1]               # 전일 종가
+        closes_all = df["Close"]
+
+        # 장중일 때는 보조지표(MA, RSI 등) 계산 시 오늘 변동성을 제외하기 위해 전일까지만 사용
+        if is_market_open:
+            closes_calc = closes_all.iloc[:-1]
+        else:
+            closes_calc = closes_all
+
+        # 등락률 및 연속 상승/하락은 무조건 오늘 데이터(closes_all)를 포함해 계산
+        price = closes_all.iloc[-1]
+        prev_price = closes_all.iloc[-2]
         change_rate = ((price - prev_price) / prev_price) * 100
 
-        count, direction = get_consecutive_days(closes)
+        count, direction = get_consecutive_days(closes_all)
 
-        ma20 = closes.rolling(window=20).mean().iloc[-1]
-        ma50 = closes.rolling(window=50).mean().iloc[-1]
+        ma20 = closes_calc.rolling(window=20).mean().iloc[-1]
+        ma50 = closes_calc.rolling(window=50).mean().iloc[-1]
         d20  = (price / ma20) * 100
         d50  = (price / ma50) * 100
-        rsi  = calc_rsi(closes).iloc[-1]
-        mdd  = calculate_mdd(closes)
-        drop52 = ((price - closes.max()) / closes.max()) * 100
+        rsi  = calc_rsi(closes_calc).iloc[-1]
+        mdd  = calculate_mdd(closes_calc)
+        drop52 = ((price - closes_calc.max()) / closes_calc.max()) * 100
 
         sig20   = get_signal_20(d20)
         sig50   = get_signal_50(d50)
