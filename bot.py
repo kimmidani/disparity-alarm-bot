@@ -1,9 +1,9 @@
-import requests
+import yfinance as yf
+import pandas as pd
 import os
 from datetime import datetime
-import xml.etree.ElementTree as ET
-import pandas as pd
 import pytz
+import requests
 
 # 텔레그램 설정값 (환경변수 또는 직접 입력)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "여기에_토큰_입력")
@@ -21,48 +21,6 @@ def send_telegram_message(message):
             print(f"▶ [실패] 텔레그램 전송 실패: {response.text}")
     except Exception as e:
         print(f"▶ 텔레그램 전송 중 에러 발생: {e}")
-
-def load_stock_data(symbol):
-    """네이버 금융 fchart API를 활용해 일별 수정주가 데이터를 안전하게 파싱합니다."""
-    url = f"https://fchart.stock.naver.com/sise.nhn?symbol={symbol}&timeframe=day&count=365&requestType=0"
-    
-    # 🔥 핵심 해결 포인트: 네이버의 무단 크롤링 차단을 우회하기 위한 브라우저 헤더 추가
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-    }
-    
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            print(f"⚠️ {symbol} 서버 응답 에러: HTTP {response.status_code}")
-            return pd.DataFrame()
-        
-        root = ET.fromstring(response.content)
-        data_list = []
-        for item in root.findall('.//item'):
-            data_str = item.get('data')
-            if data_str:
-                parts = data_str.split('|')
-                if len(parts) >= 6:
-                    data_list.append({
-                        'Date': pd.to_datetime(parts[0], format='%Y%m%d'),
-                        'Open': float(parts[1]),
-                        'High': float(parts[2]),
-                        'Low': float(parts[3]),
-                        'Close': float(parts[4]),
-                        'Volume': float(parts[5])
-                    })
-        
-        if not data_list:
-            print(f"⚠️ {symbol} 데이터가 비어있습니다.")
-            return pd.DataFrame()
-            
-        df = pd.DataFrame(data_list)
-        df.set_index('Date', inplace=True)
-        return df
-    except Exception as e:
-        print(f"▶ 데이터 로드 에러 ({symbol}): {e}")
-        return pd.DataFrame()
 
 def get_consecutive_days(series):
     """연속 등락 일수를 계산합니다."""
@@ -141,78 +99,86 @@ def check_market_disparity():
     now = datetime.now(kst)
     now_str = now.strftime("%Y-%m-%d %H:%M")
 
-    # 네이버 금융 기준 심볼 (지수는 영문 대문자, 종목은 6자리 문자열 코드)
+    # 야후 파이낸스 티커 명세
     tickers = {
-        "코스피":     ("KOSPI",     True),
-        "삼성전자":   ("005930", False),
-        "SK하이닉스": ("000660", False),
-        "삼성전기":   ("009150", False),
+        "코스피":     ("^KS11",     True),
+        "삼성전자":   ("005930.KS", False),
+        "SK하이닉스": ("000660.KS", False),
+        "삼성전기":   ("009150.KS", False),
     }
 
     lines = ["🔔 <b>주요 기술적지표 브리핑</b>", f"🕐 {now_str}"]
 
     for name, (symbol, is_index) in tickers.items():
-        df = load_stock_data(symbol)
-        if df.empty or len(df) < 50:
-            print(f"⚠️ {name}({symbol}) 데이터를 불러오지 못해 텔레그램 생략합니다.")
+        try:
+            ticker = yf.Ticker(symbol)
+            # 기술적 지표 계산을 위해 1년치 데이터 수집
+            df = ticker.history(period="1y")
+            
+            if df.empty or len(df) < 50:
+                print(f"⚠️ {name}({symbol}) 데이터를 가져오지 못해 스킵합니다.")
+                continue
+
+            closes_all = df["Close"]
+            price = closes_all.iloc[-1]
+
+            # 지표 계산용 데이터셋 분리 (장중 변동성 왜곡 방지)
+            last_date = df.index[-1].date()
+            is_intraday = (last_date == now.date()) and (now.hour < 15 or (now.hour == 15 and now.minute < 40))
+            closes_calc = closes_all.iloc[:-1] if is_intraday else closes_all
+
+            # 기술적 지표 연산
+            ma20 = closes_calc.rolling(window=20).mean().iloc[-1]
+            ma50 = closes_calc.rolling(window=50).mean().iloc[-1]
+            
+            d20 = (price / ma20) * 100 if ma20 and ma20 != 0 else float('nan')
+            d50 = (price / ma50) * 100 if ma50 and ma50 != 0 else float('nan')
+            
+            rsi_series = calc_rsi(closes_calc)
+            rsi = rsi_series.iloc[-1] if not rsi_series.empty else float('nan')
+            
+            mdd = calculate_mdd(closes_calc)
+            max_val = closes_calc.max()
+            drop52 = ((price - max_val) / max_val) * 100 if max_val and max_val != 0 else float('nan')
+
+            sig20 = get_signal_20(d20)
+            sig50 = get_signal_50(d50)
+            rsi_sig = get_rsi_signal(rsi)
+            opinion = get_final_opinion(sig20, sig50, rsi_sig)
+            mdd_str = get_mdd_signal(mdd)
+
+            # 데이터 출력 포맷팅 (NaN 방어 처리)
+            d20_str = f"{d20:.0f}" if not pd.isna(d20) else "N/A"
+            d50_str = f"{d50:.0f}" if not pd.isna(d50) else "N/A"
+            rsi_str = f"{rsi:.0f}" if not pd.isna(rsi) else "N/A"
+
+            lines.append("<code>─────────────────</code>")
+            
+            # 🔥 코스피 지수와 개별 종목 출력 조건 분기
+            if is_index:
+                price_fmt = f"{price:,.2f}"
+                lines.append(f"📊 <b>{name}</b>  {price_fmt}pt")
+                # 코스피는 등락률 및 연속 상승/하락 행을 완전히 제외합니다.
+            else:
+                prev_price = closes_all.iloc[-2] if len(closes_all) >= 2 else price
+                change_rate = ((price - prev_price) / prev_price) * 100 if prev_price != 0 else 0.0
+                count, direction = get_consecutive_days(closes_all)
+                
+                price_fmt = f"{price:,.0f}"
+                lines.append(f"📊 <b>{name}</b>  {price_fmt}원 ({change_rate:+.2f}%)")
+                lines.append(f"<code>등락   {count}일 연속 {direction}</code>")
+
+            # 하단 공통 지표 출력
+            lines.append(f"<code>20일  {d20_str:>3}%  {sig20}</code>")
+            lines.append(f"<code>50일  {d50_str:>3}%  {sig50}</code>")
+            lines.append(f"<code>RSI   {rsi_str:>3}   {rsi_sig}</code>")
+            lines.append(f"<code>52주낙폭  {drop52:>6.1f}%</code>")
+            lines.append(f"<code>MDD   {mdd:>6.1f}%  {mdd_str}</code>")
+            lines.append(opinion)
+
+        except Exception as e:
+            print(f"▶ {name}({symbol}) 처리 중 예외 에러 발생: {e}")
             continue
-
-        closes_all = df["Close"]
-
-        # 장중 실시간 데이터 반영 여부 세팅
-        last_date = df.index[-1].date()
-        is_intraday = (last_date == now.date()) and (now.hour < 15 or (now.hour == 15 and now.minute < 40))
-
-        if is_intraday:
-            closes_calc = closes_all.iloc[:-1]
-        else:
-            closes_calc = closes_all
-
-        if closes_calc.empty or len(closes_calc) < 50:
-            continue
-
-        price = closes_all.iloc[-1]
-        prev_price = closes_all.iloc[-2] if len(closes_all) >= 2 else price
-        change_rate = ((price - prev_price) / prev_price) * 100 if prev_price != 0 else 0.0
-
-        count, direction = get_consecutive_days(closes_all)
-
-        ma20 = closes_calc.rolling(window=20).mean().iloc[-1]
-        ma50 = closes_calc.rolling(window=50).mean().iloc[-1]
-        
-        d20  = (price / ma20) * 100 if ma20 and ma20 != 0 else float('nan')
-        d50  = (price / ma50) * 100 if ma50 and ma50 != 0 else float('nan')
-        
-        rsi_series = calc_rsi(closes_calc)
-        rsi = rsi_series.iloc[-1] if not rsi_series.empty else float('nan')
-        
-        mdd  = calculate_mdd(closes_calc)
-        
-        max_val = closes_calc.max()
-        drop52 = ((price - max_val) / max_val) * 100 if max_val and max_val != 0 else float('nan')
-
-        sig20   = get_signal_20(d20)
-        sig50   = get_signal_50(d50)
-        rsi_sig = get_rsi_signal(rsi)
-        opinion = get_final_opinion(sig20, sig50, rsi_sig)
-        mdd_str = get_mdd_signal(mdd)
-        
-        unit    = "pt" if is_index else "원"
-
-        d20_str = f"{d20:.0f}" if not pd.isna(d20) else "N/A"
-        d50_str = f"{d50:.0f}" if not pd.isna(d50) else "N/A"
-        rsi_str = f"{rsi:.0f}" if not pd.isna(rsi) else "N/A"
-        price_fmt = f"{price:,.2f}" if is_index else f"{price:,.0f}"
-
-        lines.append("<code>─────────────────</code>")
-        lines.append(f"📊 <b>{name}</b>  {price_fmt}{unit} ({change_rate:+.2f}%)")
-        lines.append(f"<code>등락   {count}일 연속 {direction}</code>")
-        lines.append(f"<code>20일  {d20_str:>3}%  {sig20}</code>")
-        lines.append(f"<code>50일  {d50_str:>3}%  {sig50}</code>")
-        lines.append(f"<code>RSI   {rsi_str:>3}   {rsi_sig}</code>")
-        lines.append(f"<code>52주낙폭  {drop52:>6.1f}%</code>")
-        lines.append(f"<code>MDD   {mdd:>6.1f}%  {mdd_str}</code>")
-        lines.append(opinion)
 
     lines.append("<code>─────────────────</code>")
     send_telegram_message("\n".join(lines))
