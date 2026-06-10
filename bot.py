@@ -1,7 +1,8 @@
-import yfinance as yf
 import requests
 import os
 from datetime import datetime
+import xml.etree.ElementTree as ET
+import pandas as pd
 import pytz
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "여기에_토큰_입력")
@@ -18,9 +19,42 @@ def send_telegram_message(message):
         print(f"▶ 에러: {e}")
 
 def load_stock_data(symbol):
-    # 시간대 변환의 부작용을 막기 위해 raw 데이터만 추출
-    df = yf.Ticker(symbol).history(period="1y", auto_adjust=True)
-    return df
+    """
+    네이버 금융 fchart API를 활용해 일별 수정주가 데이터를 가져옵니다.
+    """
+    url = f"https://fchart.stock.naver.com/sise.nhn?symbol={symbol}&timeframe=day&count=365&requestType=0"
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            return pd.DataFrame()
+        
+        # 네이버 차트 XML 데이터 파싱
+        root = ET.fromstring(response.content)
+        data_list = []
+        for item in root.findall('.//item'):
+            data_str = item.get('data')
+            if data_str:
+                parts = data_str.split('|')
+                # 데이터 규격: 날짜|시가|고가|저가|종가|거래량
+                if len(parts) >= 6:
+                    data_list.append({
+                        'Date': pd.to_datetime(parts[0], format='%Y%m%d'),
+                        'Open': float(parts[1]),
+                        'High': float(parts[2]),
+                        'Low': float(parts[3]),
+                        'Close': float(parts[4]),
+                        'Volume': float(parts[5])
+                    })
+        
+        if not data_list:
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(data_list)
+        df.set_index('Date', inplace=True)
+        return df
+    except Exception as e:
+        print(f"▶ 데이터 로드 에러 ({symbol}): {e}")
+        return pd.DataFrame()
 
 def get_consecutive_days(series):
     closes = series.tolist()
@@ -90,17 +124,15 @@ def check_market_disparity():
     now = datetime.now(kst)
     now_str = now.strftime("%Y-%m-%d %H:%M")
 
+    # 네이버 금융 시스템에 맞춘 심볼 정의 (코스피는 'KOSPI', 종목은 6자리 숫자)
     tickers = {
-        "코스피":     ("^KS11",     True),
-        "삼성전자":   ("005930.KS", False),
-        "SK하이닉스": ("000660.KS", False),
-        "삼성전기":   ("009150.KS", False),
+        "코스피":     ("KOSPI",     True),
+        "삼성전자":   ("005930", False),
+        "SK하이닉스": ("000660", False),
+        "삼성전기":   ("009150", False),
     }
 
     lines = ["🔔 <b>주요 기술적지표 브리핑</b>", f"🕐 {now_str}"]
-
-    # 현재 한국 시간 기준으로 장중(09:00 ~ 15:30)인지 확인
-    is_market_open = (9 <= now.hour < 15) or (now.hour == 15 and now.minute < 30)
 
     for name, (symbol, is_index) in tickers.items():
         df = load_stock_data(symbol)
@@ -109,13 +141,17 @@ def check_market_disparity():
 
         closes_all = df["Close"]
 
-        # 장중일 때는 보조지표(MA, RSI 등) 계산 시 오늘 변동성을 제외하기 위해 전일까지만 사용
-        if is_market_open:
+        # 데이터의 마지막 날짜가 실제 '오늘'이고, 장 마감(오후 3시 40분) 전인지 확인
+        last_date = df.index[-1].date()
+        is_intraday = (last_date == now.date()) and (now.hour < 15 or (now.hour == 15 and now.minute < 40))
+
+        # 장중일 때만 오늘 변동성을 제외하고 지표(MA, RSI 등)를 계산 (왜곡 방지)
+        if is_intraday:
             closes_calc = closes_all.iloc[:-1]
         else:
             closes_calc = closes_all
 
-        # 등락률 및 연속 상승/하락은 무조건 오늘 데이터(closes_all)를 포함해 계산
+        # 등락률 및 연속 등락 계산은 언제나 실시간 최종 데이터 적용
         price = closes_all.iloc[-1]
         prev_price = closes_all.iloc[-2]
         change_rate = ((price - prev_price) / prev_price) * 100
