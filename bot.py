@@ -18,17 +18,14 @@ def send_telegram_message(message):
         print(f"▶ 에러: {e}")
 
 def get_consecutive_days(series):
-    """연속 상승/하락 일수 계산 (보합 제외, 순서 보정)"""
     closes = series.tolist()
     diffs = []
     for i in range(1, len(closes)):
         d = closes[i] - closes[i-1]
         if d != 0:
             diffs.append(d)
-    
     if not diffs:
         return 0, "보합"
-    
     is_up = diffs[-1] > 0
     count = 0
     for d in reversed(diffs):
@@ -36,9 +33,7 @@ def get_consecutive_days(series):
             count += 1
         else:
             break
-    
-    direction = "상승" if is_up else "하락"
-    return count, direction
+    return count, "상승" if is_up else "하락"
 
 def calc_rsi(series, period=14):
     delta = series.diff()
@@ -77,15 +72,37 @@ def get_final_opinion(sig20, sig50, rsi_sig):
     for sig in [sig20, sig50, rsi_sig]:
         if "매수권" in sig: score += 1
         elif "과열" in sig: score -= 1
-    if score >= 3:   return "💡 적극 매수 검토"
-    elif score >= 1: return "💡 분할 매수 검토"
-    elif score == 0: return "💡 관망"
+    if score >= 3:    return "💡 적극 매수 검토"
+    elif score >= 1:  return "💡 분할 매수 검토"
+    elif score == 0:  return "💡 관망"
     elif score >= -2: return "💡 신규 매수 자제"
     return "💡 익절 검토"
+
+def load_stock_data(symbol):
+    """yfinance 데이터 로드 + 장중 불완전 데이터 제거"""
+    kst = pytz.timezone("Asia/Seoul")
+    now_kst = datetime.now(kst)
+
+    df = yf.Ticker(symbol).history(period="1y", auto_adjust=True)
+    if df.empty:
+        return df
+
+    # 타임존 통일
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC").tz_convert(kst)
+    else:
+        df.index = df.index.tz_convert(kst)
+
+    # 장 마감(16시) 전이면 오늘 불완전 데이터 제거
+    if df.index[-1].date() == now_kst.date() and now_kst.hour < 16:
+        df = df.iloc[:-1]
+
+    return df
 
 def check_market_disparity():
     kst = pytz.timezone("Asia/Seoul")
     now = datetime.now(kst).strftime("%Y-%m-%d %H:%M")
+
     tickers = {
         "코스피":     ("^KS11",     True),
         "삼성전자":   ("005930.KS", False),
@@ -96,13 +113,12 @@ def check_market_disparity():
     lines = ["🔔 <b>주요 기술적지표 브리핑</b>", f"🕐 {now}"]
 
     for name, (symbol, is_index) in tickers.items():
-        stock = yf.Ticker(symbol)
-        df = stock.history(period="1y")
+        df = load_stock_data(symbol)
         if df.empty:
             continue
 
         closes = df["Close"]
-        price = closes.iloc[-1]
+        price      = closes.iloc[-1]
         prev_price = closes.iloc[-2]
         change_rate = ((price - prev_price) / prev_price) * 100
 
@@ -110,18 +126,18 @@ def check_market_disparity():
 
         ma20 = closes.rolling(window=20).mean().iloc[-1]
         ma50 = closes.rolling(window=50).mean().iloc[-1]
-        d20 = (price / ma20) * 100
-        d50 = (price / ma50) * 100
-        rsi = calc_rsi(closes).iloc[-1]
-        mdd = calculate_mdd(closes)
+        d20  = (price / ma20) * 100
+        d50  = (price / ma50) * 100
+        rsi  = calc_rsi(closes).iloc[-1]
+        mdd  = calculate_mdd(closes)
         drop52 = ((price - closes.max()) / closes.max()) * 100
 
-        sig20    = get_signal_20(d20)
-        sig50    = get_signal_50(d50)
-        rsi_sig  = get_rsi_signal(rsi)
-        opinion  = get_final_opinion(sig20, sig50, rsi_sig)
-        mdd_str  = get_mdd_signal(mdd)
-        unit     = "pt" if is_index else "원"
+        sig20   = get_signal_20(d20)
+        sig50   = get_signal_50(d50)
+        rsi_sig = get_rsi_signal(rsi)
+        opinion = get_final_opinion(sig20, sig50, rsi_sig)
+        mdd_str = get_mdd_signal(mdd)
+        unit    = "pt" if is_index else "원"
 
         lines.append("<code>─────────────────</code>")
         lines.append(f"📊 <b>{name}</b>  {price:,.0f}{unit} ({change_rate:+.1f}%)")
