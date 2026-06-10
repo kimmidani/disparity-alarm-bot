@@ -25,9 +25,16 @@ def send_telegram_message(message):
 def load_stock_data(symbol):
     """네이버 금융 fchart API를 활용해 일별 수정주가 데이터를 안전하게 파싱합니다."""
     url = f"https://fchart.stock.naver.com/sise.nhn?symbol={symbol}&timeframe=day&count=365&requestType=0"
+    
+    # 🔥 핵심 해결 포인트: 네이버의 무단 크롤링 차단을 우회하기 위한 브라우저 헤더 추가
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    }
+    
     try:
-        response = requests.get(url)
+        response = requests.get(url, headers=headers, timeout=10)
         if response.status_code != 200:
+            print(f"⚠️ {symbol} 서버 응답 에러: HTTP {response.status_code}")
             return pd.DataFrame()
         
         root = ET.fromstring(response.content)
@@ -47,6 +54,7 @@ def load_stock_data(symbol):
                     })
         
         if not data_list:
+            print(f"⚠️ {symbol} 데이터가 비어있습니다.")
             return pd.DataFrame()
             
         df = pd.DataFrame(data_list)
@@ -133,7 +141,7 @@ def check_market_disparity():
     now = datetime.now(kst)
     now_str = now.strftime("%Y-%m-%d %H:%M")
 
-    # 네이버 금융 기준 심볼 (지수는 영문명, 종목은 6자리 숫자)
+    # 네이버 금융 기준 심볼 (지수는 영문 대문자, 종목은 6자리 문자열 코드)
     tickers = {
         "코스피":     ("KOSPI",     True),
         "삼성전자":   ("005930", False),
@@ -146,12 +154,12 @@ def check_market_disparity():
     for name, (symbol, is_index) in tickers.items():
         df = load_stock_data(symbol)
         if df.empty or len(df) < 50:
-            print(f"⚠️ {name}({symbol}) 데이터를 불러오지 못해 스킵합니다.")
+            print(f"⚠️ {name}({symbol}) 데이터를 불러오지 못해 텔레그램 생략합니다.")
             continue
 
         closes_all = df["Close"]
 
-        # 장중(실시간 변동) 데이터 왜곡 방지 로직
+        # 장중 실시간 데이터 반영 여부 세팅
         last_date = df.index[-1].date()
         is_intraday = (last_date == now.date()) and (now.hour < 15 or (now.hour == 15 and now.minute < 40))
 
@@ -172,7 +180,6 @@ def check_market_disparity():
         ma20 = closes_calc.rolling(window=20).mean().iloc[-1]
         ma50 = closes_calc.rolling(window=50).mean().iloc[-1]
         
-        # 0 나누기 및 NaN 방어 계산
         d20  = (price / ma20) * 100 if ma20 and ma20 != 0 else float('nan')
         d50  = (price / ma50) * 100 if ma50 and ma50 != 0 else float('nan')
         
@@ -192,7 +199,6 @@ def check_market_disparity():
         
         unit    = "pt" if is_index else "원"
 
-        # 핵심 에러 해결: int() 강제 형변환 대신, format 명세 처리로 NaN 에러 차단
         d20_str = f"{d20:.0f}" if not pd.isna(d20) else "N/A"
         d50_str = f"{d50:.0f}" if not pd.isna(d50) else "N/A"
         rsi_str = f"{rsi:.0f}" if not pd.isna(rsi) else "N/A"
