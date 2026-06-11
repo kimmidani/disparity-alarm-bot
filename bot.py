@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 import pytz
 import requests
+import numpy as np
 
 # 텔레그램 설정값 (환경변수 또는 직접 입력)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "여기에_토큰_입력")
@@ -24,11 +25,14 @@ def send_telegram_message(message):
 
 def get_consecutive_days(series):
     """연속 등락 일수를 계산합니다."""
-    closes = series.tolist()
+    closes = series.dropna().tolist()
     if len(closes) < 2:
         return 0, "보합"
 
     diffs = [closes[i] - closes[i-1] for i in range(1, len(closes))]
+    if not diffs:
+        return 0, "보합"
+        
     latest_diff = diffs[-1]
 
     if latest_diff == 0:
@@ -60,28 +64,22 @@ def calculate_mdd(series):
     return drawdown.min() * 100
 
 def get_signal_20(disparity):
-    if pd.isna(disparity): return "⚪관망  "
+    if pd.isna(disparity) or np.isnan(disparity): return "⚪관망  "
     if disparity >= 115:  return "🔴과열  "
     elif disparity <= 85: return "🟢매수권"
     return "⚪관망  "
 
 def get_signal_50(disparity):
-    if pd.isna(disparity): return "⚪관망  "
+    if pd.isna(disparity) or np.isnan(disparity): return "⚪관망  "
     if disparity >= 125:   return "🔴과열  "
     elif disparity <= 110: return "🟢매수권"
     return "⚪관망  "
 
 def get_rsi_signal(rsi):
-    if pd.isna(rsi): return "⚪중립  "
+    if pd.isna(rsi) or np.isnan(rsi): return "⚪중립  "
     if rsi >= 70:   return "🔴과열  "
     elif rsi <= 30: return "🟢매수권"
     return "⚪중립  "
-
-def get_mdd_signal(mdd):
-    if pd.isna(mdd): return "보통"
-    if mdd >= -20: return "안정"
-    elif mdd >= -40: return "보통"
-    return "고변동"
 
 def get_final_opinion(sig20, sig50, rsi_sig):
     score = 0
@@ -118,18 +116,25 @@ def check_market_disparity():
                 print(f"⚠️ {name}({symbol}) 데이터를 가져오지 못해 스킵합니다.")
                 continue
 
-            closes_all = df["Close"]
+            closes_all = df["Close"].dropna()
+            if closes_all.empty:
+                continue
+                
             price = closes_all.iloc[-1]
 
             last_date = df.index[-1].date()
             is_intraday = (last_date == now.date()) and (now.hour < 15 or (now.hour == 15 and now.minute < 40))
-            closes_calc = closes_all.iloc[:-1] if is_intraday else closes_all
+            closes_calc = closes_all.iloc[:-1] if (is_intraday and len(closes_all) > 50) else closes_all
 
-            ma20 = closes_calc.rolling(window=20).mean().iloc[-1]
-            ma50 = closes_calc.rolling(window=50).mean().iloc[-1]
+            # 이동평균 및 지표 계산 안전 장치 추가
+            ma20_series = closes_calc.rolling(window=20).mean()
+            ma50_series = closes_calc.rolling(window=50).mean()
             
-            d20 = (price / ma20) * 100 if ma20 and ma20 != 0 else float('nan')
-            d50 = (price / ma50) * 100 if ma50 and ma50 != 0 else float('nan')
+            ma20 = ma20_series.iloc[-1] if not ma20_series.empty else float('nan')
+            ma50 = ma50_series.iloc[-1] if not ma50_series.empty else float('nan')
+            
+            d20 = (price / ma20) * 100 if not pd.isna(ma20) and ma20 != 0 else float('nan')
+            d50 = (price / ma50) * 100 if not pd.isna(ma50) and ma50 != 0 else float('nan')
             
             rsi_series = calc_rsi(closes_calc)
             rsi = rsi_series.iloc[-1] if not rsi_series.empty else float('nan')
@@ -142,47 +147,20 @@ def check_market_disparity():
             sig50 = get_signal_50(d50)
             rsi_sig = get_rsi_signal(rsi)
             opinion = get_final_opinion(sig20, sig50, rsi_sig)
-            mdd_str = get_mdd_signal(mdd)
 
-            d20_str = f"{d20:.0f}" if not pd.isna(d20) else "N/A"
-            d50_str = f"{d50:.0f}" if not pd.isna(d50) else "N/A"
-            rsi_str = f"{rsi:.0f}" if not pd.isna(rsi) else "N/A"
+            # 출력용 문자열 포맷팅 (깨짐 방지용 정렬 보완)
+            d20_str = f"{d20:.1f}%" if not pd.isna(d20) else "N/A%"
+            d50_str = f"{d50:.1f}%" if not pd.isna(d50) else "N/A%"
+            rsi_str = f"{rsi:.1f}" if not pd.isna(rsi) else "N/A"
+            drop52_str = f"{drop52:.1f}%" if not pd.isna(drop52) else "N/A%"
+            mdd_str = f"{mdd:.1f}%" if not pd.isna(mdd) else "N/A%"
 
+            # 모바일 화면 크기에 맞춰 선 길이 축소 (17자)
             lines.append("<code>─────────────────</code>")
             
             if is_index:
-                price_fmt = f"{price:,.2f}"
-                lines.append(f"📊 <b>{name}</b>  {price_fmt}pt")
+                price_fmt = f"{price:,.2f}" if not pd.isna(price) else "N/A"
+                lines.append(f"📊 <b>{name}</b> {price_fmt}pt")
             else:
                 prev_price = closes_all.iloc[-2] if len(closes_all) >= 2 else price
-                change_rate = ((price - prev_price) / prev_price) * 100 if prev_price != 0 else 0.0
-                count, direction = get_consecutive_days(closes_all)
-                
-                price_fmt = f"{price:,.0f}"
-                lines.append(f"📊 <b>{name}</b>  {price_fmt}원 ({change_rate:+.2f}%)")
-                lines.append(f"<code>등락   {count}일 연속 {direction}</code>")
-
-            # 하단 공통 지표 출력
-            lines.append(f"<code>20일  {d20_str:>3}%  {sig20}</code>")
-            lines.append(f"<code>50일  {d50_str:>3}%  {sig50}</code>")
-            lines.append(f"<code>RSI   {rsi_str:>3}   {rsi_sig}</code>")
-            lines.append(f"<code>52주낙폭  {drop52:>6.1f}%</code>")
-            lines.append(f"<code>MDD   {mdd:>6.1f}%  {mdd_str}</code>")
-            lines.append(opinion)
-
-            # 🔥 [조건 추가] 코스피 지수의 50일 이격도 특수 알림 처리
-            if name == "코스피" and not pd.isna(d50):
-                if d50 >= 130:
-                    lines.append("🚨 <b>⚠️ 과열권 진입, 패닉바잉 자제</b>")
-                elif d50 <= 110:
-                    lines.append("📢 <b>🟢 과열해소 진행, 패닉셀링 자제</b>")
-
-        except Exception as e:
-            print(f"▶ {name}({symbol}) 처리 중 예외 에러 발생: {e}")
-            continue
-
-    lines.append("<code>─────────────────</code>")
-    send_telegram_message("\n".join(lines))
-
-if __name__ == "__main__":
-    check_market_disparity()
+                change_rate = ((price - prev_price) / prev_
