@@ -90,12 +90,7 @@ def get_final_opinion(sig20, sig50, rsi_sig):
 # Telegram <code> 블록은 모노스페이스지만 한글=2칸, 영문/숫자=1칸
 # → 라벨을 영문 고정 약어로 통일하고 값은 우정렬 8자리로 맞춤
 def fmt_row(label: str, value: str, signal: str = "") -> str:
-    """
-    label : 영문 6자 이하 고정 약어 (예: "MA20  ", "MA50  ")
-    value : 수치 문자열, 오른쪽 정렬 7자
-    signal: 시그널 문자열 (없으면 빈 문자열)
-    """
-    value_part = value.rjust(7)
+    value_part = value.rjust(8)  # 7 → 8로 변경
     if signal:
         return f"<code>{label} {value_part}  {signal}</code>"
     return f"<code>{label} {value_part}</code>"
@@ -170,20 +165,20 @@ def check_market_disparity():
             # ── 종목 헤더 ──
             if is_index:
                 price_fmt = f"{price:,.2f}pt" if not pd.isna(price) else "N/A"
-                # 코스피도 전일 대비 등락률 표시
                 prev_price = closes_all.iloc[-2] if len(closes_all) >= 2 else price
                 change_rate = ((price - prev_price) / prev_price * 100) if prev_price != 0 else 0.0
-                change_str = f"{change_rate:+.2f}%"
+                change_str = f"{change_rate:+.1f}%"
                 lines.append(f"📊 <b>{name}</b>  {price_fmt} ({change_str})")
             else:
                 prev_price = closes_all.iloc[-2] if len(closes_all) >= 2 else price
                 change_rate = ((price - prev_price) / prev_price * 100) if prev_price != 0 else 0.0
                 count, direction = get_consecutive_days(closes_all)
                 price_fmt = f"{price:,.0f}원" if not pd.isna(price) else "N/A"
-                change_str = f"{change_rate:+.2f}%"
-                lines.append(f"📊 <b>{name}</b>  {price_fmt} ({change_str})")
-                lines.append(f"<code>연속    {count}일 {direction}</code>")
-
+                change_str = f"{change_rate:+.1f}%"
+                # 가격/등락률 분리 → 줄 넘침 방지
+                lines.append(f"📊 <b>{name}</b>  {price_fmt}")
+                lines.append(f"<code>등락    {change_str}  {count}일 {direction}</code>")
+                
             # ── 지표 행 (영문 라벨로 통일 → 정렬 안 깨짐) ──
             lines.append(fmt_row("MA20 ", d20_str,    sig20))
             lines.append(fmt_row("MA50 ", d50_str,    sig50))
